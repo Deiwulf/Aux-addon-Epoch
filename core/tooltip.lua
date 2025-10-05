@@ -135,6 +135,11 @@ function M.extend_tooltip(tooltip, link, quantity)
     if tooltip == GameTooltip and game_tooltip_money > 0 then
         SetTooltipMoney(tooltip, game_tooltip_money)
     end
+
+	-- Add Pawn integration if available
+    if link and PawnUpdateTooltip then
+        pcall(PawnUpdateTooltip, tooltip:GetName(), "SetHyperlink", link)
+    end
     tooltip:Show()
 end
 
