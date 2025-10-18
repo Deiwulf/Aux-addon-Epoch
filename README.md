@@ -1,9 +1,13 @@
-If you want to help, here is my paypal : [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://paypal.me/sebpoirot)
+![Pawn Integration](https://i.imgur.com/1sqSdG6.png)
 
+# Aux AH AddOn with Pawn support
 
-# Aux AH AddOn
+The most advanced auction house addOn for the 3.3.5 client with some features more advanced than anything even on retail. Working on Project Epoch / Ascension. Now with Pawn support for super quick gear shopping.
 
-The most advanced auction house addOn for the 3.3.5 client with some features more advanced than anything even on retail. Working on Project Epoch
+Support the Authors : 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q41J7Y2M) 
+[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://paypal.me/sebpoirot)
+
 
 ## Changelog
 

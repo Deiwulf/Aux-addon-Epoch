@@ -14,6 +14,25 @@ local cache = require 'aux.core.cache'
 
 local price_per_unit = false
 
+-- Helper: pick the first available Pawn scale to use for table comparisons.
+local function get_first_visible_pawn_scale()
+    if type(PawnGetAllScalesEx) ~= 'function' then return nil end
+    -- If PawnUICurrentScale is set and looks valid, prefer it.
+    if type(PawnUICurrentScale) == 'string' and PawnUICurrentScale ~= '' and type(PawnCommon) == 'table' and PawnCommon.Scales and PawnCommon.Scales[PawnUICurrentScale] then
+        return PawnUICurrentScale
+    end
+    local ok, scales = pcall(PawnGetAllScalesEx)
+    if not ok or not scales then return nil end
+    for _, s in ipairs(scales) do
+        if s.IsVisible then
+            return s.Name
+        end
+    end
+    -- Fallback: return first scale name if any
+    if scales[1] and scales[1].Name then return scales[1].Name end
+    return nil
+end
+
 local HEAD_HEIGHT = 27
 local HEAD_SPACE = 2
 
@@ -87,6 +106,133 @@ M.search_columns = {
         end,
         cmp = function(record_a, record_b, desc)
             return sort_util.compare(record_a.level, record_b.level, desc)
+        end,
+    },
+    {
+        title = 'Pawn\nScore',
+        width = .06,
+        align = 'RIGHT',
+        fill = function(cell, record)
+            local scale = get_first_visible_pawn_scale()
+            if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
+                cell.text:SetText('---')
+                return
+            end
+            local value
+            -- Prefer parsing the saved auction tooltip for this record if available. That lets Pawn
+            -- see per-auction differences (enchants, suffixes, charges) even when item links look
+            -- identical. Fallback to PawnGetItemData(itemlink) when tooltip parsing isn't available.
+            if record.tooltip and type(PawnGetStatsFromTooltip) == 'function' and PawnPrivateTooltip then
+                pcall(function()
+                    PawnPrivateTooltip:ClearLines()
+                    for _, line in ipairs(record.tooltip) do
+                        if line.right_text then
+                            PawnPrivateTooltip:AddDoubleLine(
+                                line.left_text,
+                                line.right_text,
+                                line.left_color[1], line.left_color[2], line.left_color[3],
+                                line.right_color[1], line.right_color[2], line.right_color[3]
+                            )
+                        else
+                            PawnPrivateTooltip:AddLine(line.left_text, line.left_color[1], line.left_color[2], line.left_color[3], true)
+                        end
+                    end
+                    local ok_stats, stats, socket, unknown = pcall(PawnGetStatsFromTooltip, "PawnPrivateTooltip", true)
+                    if ok_stats and stats then
+                        local Item = { Stats = stats, SocketBonusStats = socket or {}, UnenchantedStats = {}, UnenchantedSocketBonusStats = {}, Values = nil }
+                        pcall(function()
+                            PawnRecalculateItemValuesIfNecessary(Item)
+                            local ok2, v = pcall(PawnGetSingleValueFromItem, Item, scale)
+                            if ok2 and v ~= nil then value = v end
+                        end)
+                    end
+                end)
+            end
+            if not value then
+                local pawn_item_arg = record.itemstring or record.link
+                local ok, item = pcall(PawnGetItemData, pawn_item_arg)
+                if ok and item then
+                    local ok2, v = pcall(PawnGetSingleValueFromItem, item, scale)
+                    if ok2 and v ~= nil then
+                        value = v
+                    end
+                end
+            end
+            if not value then
+                cell.text:SetText('---')
+                return
+            end
+            -- Format: show integer without decimal (380.0 -> 380), otherwise use PawnCommon.Digits
+            if value == floor(value) then
+                cell.text:SetText(tostring(floor(value)))
+            else
+                local digits = (type(PawnCommon) == 'table' and PawnCommon.Digits) or 1
+                local fmt = '%.' .. (digits) .. 'f'
+                cell.text:SetText(format(fmt, value))
+            end
+        end,
+        cmp = function(record_a, record_b, desc)
+            local scale = get_first_visible_pawn_scale()
+            if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
+                return sort_util.EQ
+            end
+            local function v_for(record)
+                local value
+                if record.tooltip and type(PawnGetItemDataFromTooltip) == 'function' and PawnPrivateTooltip then
+                    pcall(function()
+                        PawnPrivateTooltip:ClearLines()
+                        for _, line in ipairs(record.tooltip) do
+                            if line.right_text then
+                                PawnPrivateTooltip:AddDoubleLine(
+                                    line.left_text,
+                                    line.right_text,
+                                    line.left_color[1], line.left_color[2], line.left_color[3],
+                                    line.right_color[1], line.right_color[2], line.right_color[3]
+                                )
+                            else
+                                PawnPrivateTooltip:AddLine(line.left_text, line.left_color[1], line.left_color[2], line.left_color[3], true)
+                            end
+                        end
+                                local ok_stats, stats, socket, unknown = pcall(PawnGetStatsFromTooltip, "PawnPrivateTooltip", true)
+                                if ok_stats and stats then
+                                    local Item = { Stats = stats, SocketBonusStats = socket or {}, UnenchantedStats = {}, UnenchantedSocketBonusStats = {}, Values = nil }
+                                    pcall(function()
+                                        PawnRecalculateItemValuesIfNecessary(Item)
+                                        local ok2, v = pcall(PawnGetSingleValueFromItem, Item, scale)
+                                        if ok2 and v ~= nil then value = v end
+                                    end)
+                                end
+                    end)
+                end
+                if not value then
+                    local pawn_item_arg = record.itemstring or record.link
+                    local ok, item = pcall(PawnGetItemData, pawn_item_arg)
+                    if ok and item then
+                        local ok2, v = pcall(PawnGetSingleValueFromItem, item, scale)
+                        if ok2 and v ~= nil then
+                            value = v
+                        end
+                    end
+                end
+                return value
+            end
+            local va = v_for(record_a)
+            local vb = v_for(record_b)
+            if va == nil and vb == nil then
+                -- fallback to buyout to produce deterministic ordering
+                local pa = record_a.buyout_price > 0 and record_a.buyout_price or record_a.start_price or 0
+                local pb = record_b.buyout_price > 0 and record_b.buyout_price or record_b.start_price or 0
+                return sort_util.compare(pa, pb, desc)
+            end
+            if va == nil then return sort_util.GT end
+            if vb == nil then return sort_util.LT end
+            local ordering = sort_util.compare(va, vb, not desc)
+            if ordering == sort_util.EQ then
+                local pa = record_a.buyout_price > 0 and record_a.buyout_price or record_a.start_price or 0
+                local pb = record_b.buyout_price > 0 and record_b.buyout_price or record_b.start_price or 0
+                return sort_util.compare(pa, pb, desc)
+            end
+            return ordering
         end,
     },
     {
@@ -257,6 +403,73 @@ M.auctions_columns = {
         end,
         cmp = function(record_a, record_b, desc)
             return sort_util.compare(record_a.level, record_b.level, desc)
+        end,
+    },
+    {
+        title = 'Pawn\nScore',
+        width = .06,
+        align = 'RIGHT',
+        fill = function(cell, record)
+            local scale = get_first_visible_pawn_scale()
+            if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
+                cell.text:SetText('---')
+                return
+            end
+            local pawn_item_arg = record.itemstring or record.link
+            local value
+            do
+                local ok, item = pcall(PawnGetItemData, pawn_item_arg)
+                if ok and item then
+                    local ok2, v = pcall(PawnGetSingleValueFromItem, item, scale)
+                    if ok2 and v ~= nil then
+                        value = v
+                    end
+                end
+            end
+            if not value then
+                cell.text:SetText('---')
+                return
+            end
+            if value == floor(value) then
+                cell.text:SetText(tostring(floor(value)))
+            else
+                local digits = (type(PawnCommon) == 'table' and PawnCommon.Digits) or 1
+                local fmt = '%.' .. (digits) .. 'f'
+                cell.text:SetText(format(fmt, value))
+            end
+        end,
+        cmp = function(record_a, record_b, desc)
+            local scale = get_first_visible_pawn_scale()
+            if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
+                return sort_util.EQ
+            end
+            local function v_for(record)
+                local pawn_item_arg = record.itemstring or record.link
+                local ok, item = pcall(PawnGetItemData, pawn_item_arg)
+                if ok and item then
+                    local ok2, v = pcall(PawnGetSingleValueFromItem, item, scale)
+                    if ok2 and v ~= nil then
+                        return v
+                    end
+                end
+                return nil
+            end
+            local va = v_for(record_a)
+            local vb = v_for(record_b)
+            if va == nil and vb == nil then
+                local pa = record_a.buyout_price > 0 and record_a.buyout_price or record_a.start_price or 0
+                local pb = record_b.buyout_price > 0 and record_b.buyout_price or record_b.start_price or 0
+                return sort_util.compare(pa, pb, desc)
+            end
+            if va == nil then return sort_util.GT end
+            if vb == nil then return sort_util.LT end
+            local ordering = sort_util.compare(va, vb, not desc)
+            if ordering == sort_util.EQ then
+                local pa = record_a.buyout_price > 0 and record_a.buyout_price or record_a.start_price or 0
+                local pb = record_b.buyout_price > 0 and record_b.buyout_price or record_b.start_price or 0
+                return sort_util.compare(pa, pb, desc)
+            end
+            return ordering
         end,
     },
     {
@@ -586,10 +799,78 @@ local methods = {
         local rt = this:GetParent().row.rt
         local row = this:GetParent().row
         if row.record then
-	        GameTooltip:SetOwner(this, 'ANCHOR_RIGHT')
+            GameTooltip:SetOwner(this, 'ANCHOR_RIGHT')
             info.load_tooltip(GameTooltip, row.record.tooltip)
-	        tooltip.extend_tooltip(GameTooltip, row.record.link, row.record.aux_quantity)
+            tooltip.extend_tooltip(GameTooltip, row.record.link, row.record.aux_quantity)
             info.set_shopping_tooltip(row.record.slot)
+            -- If Pawn is installed, prefer to parse the actual auction tooltip we captured
+            -- and annotate the visible GameTooltip with the computed Pawn values. This ensures
+            -- the hover tooltip uses the same per-auction parsing principle as the column.
+            if type(PawnGetStatsFromTooltip) == 'function' and PawnPrivateTooltip and type(PawnAddValuesToTooltip) == 'function' then
+                pcall(function()
+                    PawnPrivateTooltip:ClearLines()
+                    for _, line in ipairs(row.record.tooltip) do
+                        if line.right_text then
+                            PawnPrivateTooltip:AddDoubleLine(
+                                line.left_text,
+                                line.right_text,
+                                line.left_color[1], line.left_color[2], line.left_color[3],
+                                line.right_color[1], line.right_color[2], line.right_color[3]
+                            )
+                        else
+                            PawnPrivateTooltip:AddLine(line.left_text, line.left_color[1], line.left_color[2], line.left_color[3], true)
+                        end
+                    end
+                    local ok_stats, stats, socket, unknown = pcall(PawnGetStatsFromTooltip, "PawnPrivateTooltip", true)
+                    if ok_stats and stats then
+                        local Item = { Stats = stats, SocketBonusStats = socket or {}, UnenchantedStats = {}, UnenchantedSocketBonusStats = {}, Values = nil }
+                        PawnRecalculateItemValuesIfNecessary(Item)
+                        -- Try to get a single visible scale and show its numeric value directly on the GameTooltip.
+                        local scale = get_first_visible_pawn_scale()
+                        local shown = false
+                        if scale and type(PawnGetSingleValueFromItem) == 'function' then
+                            local okv, v = pcall(PawnGetSingleValueFromItem, Item, scale)
+                            if okv and v ~= nil then
+                                local value_text
+                                if v == floor(v) then
+                                    value_text = tostring(floor(v))
+                                else
+                                    local digits = (type(PawnCommon) == 'table' and PawnCommon.Digits) or 1
+                                    value_text = format('%.' .. digits .. 'f', v)
+                                end
+                                -- Get a localized scale name if possible
+                                local scale_name = (type(PawnGetScaleLocalizedName) == 'function' and PawnGetScaleLocalizedName(scale)) or scale
+                                -- Attempt to color it if PawnGetScaleColor exists
+                                local r, g, b
+                                if type(PawnGetScaleColor) == 'function' then
+                                    local okc, colr, colg, colb = pcall(PawnGetScaleColor, scale)
+                                    if okc and colr then r, g, b = colr, colg, colb end
+                                end
+                                if r then
+                                    GameTooltip:AddLine(scale_name .. ': ' .. value_text, r, g, b)
+                                else
+                                    GameTooltip:AddLine(scale_name .. ': ' .. value_text)
+                                end
+                                shown = true
+                            end
+                        end
+                        -- If we didn't show a numeric summary, try PawnAddValuesToTooltip for full annotation
+                        if not shown and type(PawnAddValuesToTooltip) == 'function' then
+                            pcall(PawnAddValuesToTooltip, GameTooltip, Item.Values)
+                            shown = true
+                        end
+                        if not shown then
+                            -- Final fallback: let PawnUpdateTooltip handle it (link-based)
+                            if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+                        end
+                    else
+                        -- Fallback to PawnUpdateTooltip for compatibility; use item link method.
+                        if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+                    end
+                end)
+            else
+                if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+            end
         end
     end,
 
