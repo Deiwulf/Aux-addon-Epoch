@@ -113,6 +113,11 @@ M.search_columns = {
         width = .06,
         align = 'RIGHT',
         fill = function(cell, record)
+            -- Respect the "Use Pawn Scores" toggle
+            if not aux.account.use_pawn_scores then
+                cell.text:SetText('---')
+                return
+            end
             local scale = get_first_visible_pawn_scale()
             if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
                 cell.text:SetText('---')
@@ -172,6 +177,10 @@ M.search_columns = {
             end
         end,
         cmp = function(record_a, record_b, desc)
+            -- Respect the "Use Pawn Scores" toggle
+            if not aux.account.use_pawn_scores then
+                return sort_util.EQ
+            end
             local scale = get_first_visible_pawn_scale()
             if not scale or type(PawnGetSingleValueFromItem) ~= 'function' or type(PawnGetItemData) ~= 'function' then
                 return sort_util.EQ
@@ -803,73 +812,74 @@ local methods = {
             info.load_tooltip(GameTooltip, row.record.tooltip)
             tooltip.extend_tooltip(GameTooltip, row.record.link, row.record.aux_quantity)
             info.set_shopping_tooltip(row.record.slot)
-            -- If Pawn is installed, prefer to parse the actual auction tooltip we captured
-            -- and annotate the visible GameTooltip with the computed Pawn values. This ensures
-            -- the hover tooltip uses the same per-auction parsing principle as the column.
-            if type(PawnGetStatsFromTooltip) == 'function' and PawnPrivateTooltip and type(PawnAddValuesToTooltip) == 'function' then
-                pcall(function()
-                    PawnPrivateTooltip:ClearLines()
-                    for _, line in ipairs(row.record.tooltip) do
-                        if line.right_text then
-                            PawnPrivateTooltip:AddDoubleLine(
-                                line.left_text,
-                                line.right_text,
-                                line.left_color[1], line.left_color[2], line.left_color[3],
-                                line.right_color[1], line.right_color[2], line.right_color[3]
-                            )
-                        else
-                            PawnPrivateTooltip:AddLine(line.left_text, line.left_color[1], line.left_color[2], line.left_color[3], true)
-                        end
-                    end
-                    local ok_stats, stats, socket, unknown = pcall(PawnGetStatsFromTooltip, "PawnPrivateTooltip", true)
-                    if ok_stats and stats then
-                        local Item = { Stats = stats, SocketBonusStats = socket or {}, UnenchantedStats = {}, UnenchantedSocketBonusStats = {}, Values = nil }
-                        PawnRecalculateItemValuesIfNecessary(Item)
-                        -- Try to get a single visible scale and show its numeric value directly on the GameTooltip.
-                        local scale = get_first_visible_pawn_scale()
-                        local shown = false
-                        if scale and type(PawnGetSingleValueFromItem) == 'function' then
-                            local okv, v = pcall(PawnGetSingleValueFromItem, Item, scale)
-                            if okv and v ~= nil then
-                                local value_text
-                                if v == floor(v) then
-                                    value_text = tostring(floor(v))
-                                else
-                                    local digits = (type(PawnCommon) == 'table' and PawnCommon.Digits) or 1
-                                    value_text = format('%.' .. digits .. 'f', v)
-                                end
-                                -- Get a localized scale name if possible
-                                local scale_name = (type(PawnGetScaleLocalizedName) == 'function' and PawnGetScaleLocalizedName(scale)) or scale
-                                -- Attempt to color it if PawnGetScaleColor exists
-                                local r, g, b
-                                if type(PawnGetScaleColor) == 'function' then
-                                    local okc, colr, colg, colb = pcall(PawnGetScaleColor, scale)
-                                    if okc and colr then r, g, b = colr, colg, colb end
-                                end
-                                if r then
-                                    GameTooltip:AddLine(scale_name .. ': ' .. value_text, r, g, b)
-                                else
-                                    GameTooltip:AddLine(scale_name .. ': ' .. value_text)
-                                end
-                                shown = true
+            -- Only annotate Pawn scores on hover if the "Use Pawn Scores" toggle is active,
+            -- to avoid the heavy tooltip scanning stutter during normal browsing.
+            if aux.account and aux.account.use_pawn_scores then
+                if type(PawnGetStatsFromTooltip) == 'function' and PawnPrivateTooltip and type(PawnAddValuesToTooltip) == 'function' then
+                    pcall(function()
+                        PawnPrivateTooltip:ClearLines()
+                        for _, line in ipairs(row.record.tooltip) do
+                            if line.right_text then
+                                PawnPrivateTooltip:AddDoubleLine(
+                                    line.left_text,
+                                    line.right_text,
+                                    line.left_color[1], line.left_color[2], line.left_color[3],
+                                    line.right_color[1], line.right_color[2], line.right_color[3]
+                                )
+                            else
+                                PawnPrivateTooltip:AddLine(line.left_text, line.left_color[1], line.left_color[2], line.left_color[3], true)
                             end
                         end
-                        -- If we didn't show a numeric summary, try PawnAddValuesToTooltip for full annotation
-                        if not shown and type(PawnAddValuesToTooltip) == 'function' then
-                            pcall(PawnAddValuesToTooltip, GameTooltip, Item.Values)
-                            shown = true
-                        end
-                        if not shown then
-                            -- Final fallback: let PawnUpdateTooltip handle it (link-based)
+                        local ok_stats, stats, socket, unknown = pcall(PawnGetStatsFromTooltip, "PawnPrivateTooltip", true)
+                        if ok_stats and stats then
+                            local Item = { Stats = stats, SocketBonusStats = socket or {}, UnenchantedStats = {}, UnenchantedSocketBonusStats = {}, Values = nil }
+                            PawnRecalculateItemValuesIfNecessary(Item)
+                            -- Try to get a single visible scale and show its numeric value directly on the GameTooltip.
+                            local scale = get_first_visible_pawn_scale()
+                            local shown = false
+                            if scale and type(PawnGetSingleValueFromItem) == 'function' then
+                                local okv, v = pcall(PawnGetSingleValueFromItem, Item, scale)
+                                if okv and v ~= nil then
+                                    local value_text
+                                    if v == floor(v) then
+                                        value_text = tostring(floor(v))
+                                    else
+                                        local digits = (type(PawnCommon) == 'table' and PawnCommon.Digits) or 1
+                                        value_text = format('%.' .. digits .. 'f', v)
+                                    end
+                                    -- Get a localized scale name if possible
+                                    local scale_name = (type(PawnGetScaleLocalizedName) == 'function' and PawnGetScaleLocalizedName(scale)) or scale
+                                    -- Attempt to color it if PawnGetScaleColor exists
+                                    local r, g, b
+                                    if type(PawnGetScaleColor) == 'function' then
+                                        local okc, colr, colg, colb = pcall(PawnGetScaleColor, scale)
+                                        if okc and colr then r, g, b = colr, colg, colb end
+                                    end
+                                    if r then
+                                        GameTooltip:AddLine(scale_name .. ': ' .. value_text, r, g, b)
+                                    else
+                                        GameTooltip:AddLine(scale_name .. ': ' .. value_text)
+                                    end
+                                    shown = true
+                                end
+                            end
+                            -- If we didn't show a numeric summary, try PawnAddValuesToTooltip for full annotation
+                            if not shown and type(PawnAddValuesToTooltip) == 'function' then
+                                pcall(PawnAddValuesToTooltip, GameTooltip, Item.Values)
+                                shown = true
+                            end
+                            if not shown then
+                                -- Final fallback: let PawnUpdateTooltip handle it (link-based)
+                                if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+                            end
+                        else
+                            -- Fallback to PawnUpdateTooltip for compatibility; use item link method.
                             if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
                         end
-                    else
-                        -- Fallback to PawnUpdateTooltip for compatibility; use item link method.
-                        if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
-                    end
-                end)
-            else
-                if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+                    end)
+                else
+                    if type(PawnUpdateTooltip) == 'function' then pcall(PawnUpdateTooltip, 'GameTooltip', 'SetHyperlink', row.record.link) end
+                end
             end
         end
     end,

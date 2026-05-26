@@ -411,7 +411,7 @@ do
     local dropdown = gui.dropdown(frame.filter)
     quality_dropdown = dropdown
     dropdown:SetPoint('TOPLEFT', slot_dropdown, 'BOTTOMLEFT', 0, 10 - FILTER_SPACING)
-    dropdown:SetWidth(300)
+    dropdown:SetWidth(225)
     local label = gui.label(dropdown, gui.font_size.small)
     label:SetPoint('BOTTOMLEFT', dropdown, 'TOPLEFT', -2, -3)
     label:SetText('Min Quality')
@@ -419,6 +419,27 @@ do
     dropdown:SetScript('OnShow', function()
         UIDropDownMenu_Initialize(this, initialize_quality_dropdown)
     end)
+    -- Use Pawn Scores checkbox placed to the right of Min Quality
+    do
+        local checkbox = gui.checkbox(frame.filter)
+        checkbox:SetPoint('LEFT', dropdown, 'RIGHT', 10, -2)
+        checkbox:SetWidth(16)
+        checkbox:SetHeight(16)
+        -- Store checkbox reference so LOAD() can sync it after saved variables load
+        M.pawn_scores_checkbox = checkbox
+        -- Defer initialization to LOAD() after saved variables are loaded
+        checkbox:SetChecked(false)
+        checkbox:SetScript('OnClick', function()
+            aux.account.use_pawn_scores = this:GetChecked()
+            -- Update Pawn column width (only affects new searches)
+            local column_width = aux.account.use_pawn_scores and 0.06 or 0.001
+            auction_listing.search_columns[3].width = column_width
+            auction_listing.auctions_columns[3].width = column_width
+        end)
+        local label = gui.label(checkbox, gui.font_size.small)
+        label:SetPoint('BOTTOMLEFT', checkbox, 'TOPLEFT', -2, 1)
+        label:SetText('Use Pawn Scores')
+    end
 end
 gui.vertical_line(frame.filter, 332)
 do

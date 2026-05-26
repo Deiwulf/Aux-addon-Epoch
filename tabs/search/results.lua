@@ -7,6 +7,13 @@ local scan = require 'aux.core.scan'
 local cache = require 'aux.core.cache'
 
 function LOAD()
+	if aux.account.use_pawn_scores == nil then
+		aux.account.use_pawn_scores = false
+	end
+	-- Sync checkbox state after saved variables load
+	if pawn_scores_checkbox then
+		pawn_scores_checkbox:SetChecked(aux.account.use_pawn_scores)
+	end
 	new_search()
 end
 
@@ -90,7 +97,11 @@ do
 		search.status_bar:set_text('')
 
 		search.table = tables[getn(searches)]
-		search.table:SetSort(1, 2, 3, 4, 5, 6, 7, 8, 9)
+		if aux.account.use_pawn_scores then
+			search.table:SetSort(3)
+		else
+			search.table:SetSort(1, 2, 3, 4, 5, 6, 7, 8, 9)
+		end
 		search.table:Reset()
 		search.table:SetDatabase(search.records)
 
@@ -419,6 +430,8 @@ do
 	end
 
 	function on_update()
+		if not current_search then return end
+
 		if state == IDLE or state == SEARCHING then
 			buyout_button:Disable()
 			bid_button:Disable()

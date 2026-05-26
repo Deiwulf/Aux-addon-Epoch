@@ -30,7 +30,9 @@ function OPEN()
 end
 
 function CLOSE()
-    current_search.table:SetSelectedRecord()
+    if current_search and current_search.table then
+        current_search.table:SetSelectedRecord()
+    end
     frame:Hide()
 end
 
